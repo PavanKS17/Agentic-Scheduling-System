@@ -1,65 +1,66 @@
-import Image from "next/image";
+"use client";
+
+import { motion } from "framer-motion";
+import { Navigation } from "@/components/Navigation";
+import { ChatInterface } from "@/components/ChatInterface";
+import { ArrowRight, PlayCircle } from "lucide-react";
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main className="min-h-screen w-full relative flex flex-col items-center">
+      <Navigation />
+
+      <div className="flex-1 w-full max-w-[90rem] mx-auto px-6 sm:px-8 flex flex-col lg:flex-row items-center justify-center gap-12 lg:gap-20 py-12 lg:py-0 relative z-10">
+        
+        {/* Left Side: Hero Information */}
+        <motion.div 
+          className="flex-1 text-left pt-8 lg:pt-0 max-w-2xl lg:ml-8"
+          initial={{ opacity: 0, x: -30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.03] border border-white/[0.08] mb-8 glass-card">
+            <span className="bg-medical-blue text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">New</span>
+            <span className="text-xs text-slate-300">Omnichannel Text-to-Voice Handoff</span>
+          </div>
+
+          <h1 className="text-5xl sm:text-6xl md:text-[5rem] leading-[1.05] font-bold text-white mb-6 tracking-tight">
+            Intelligent <br />
+            Patient Intake & <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-medical-light via-medical-blue to-medical-accent">AI Scheduling.</span>
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+
+          <p className="text-lg sm:text-xl text-slate-400 mb-10 leading-relaxed font-light max-w-xl">
+            Deploy healthcare-grade agents to automate patient onboarding, intelligently route symptoms to the right specialists, and offer seamless text-to-voice handoff—so your team can focus on care.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <button className="w-full sm:w-auto bg-medical-blue hover:bg-medical-accent text-white px-8 py-3.5 rounded-full font-medium transition-all shadow-[0_0_20px_rgba(14,165,233,0.3)] hover:shadow-[0_0_30px_rgba(14,165,233,0.5)] flex items-center justify-center gap-2 group hover:-translate-y-0.5 active:translate-y-0 text-base">
+              Request a demo
+              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </button>
+            <button className="w-full sm:w-auto px-8 py-3.5 rounded-full font-medium text-white bg-white/[0.03] border border-white/[0.1] hover:bg-white/[0.08] transition-all flex items-center justify-center gap-2 group text-base glassmorphism group-hover:-translate-y-0.5 active:translate-y-0">
+              <PlayCircle className="w-5 h-5 group-hover:-rotate-12 transition-transform text-slate-300" />
+              Watch product tour
+            </button>
+          </div>
+        </motion.div>
+
+        {/* Right Side: Chat / Dashboard Interface */}
+        <motion.div 
+          className="flex-1 w-full flex items-center justify-center pt-8 lg:pt-0 lg:mr-8"
+          initial={{ opacity: 0, x: 30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.8, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <div className="w-full relative shadow-[0_0_120px_rgba(14,165,233,0.1)] rounded-3xl">
+            {/* Ambient subtle glow behind chat */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-medical-blue/20 to-medical-dark/40 blur-3xl opacity-50 rounded-[3rem] -z-10" />
+            <ChatInterface />
+          </div>
+        </motion.div>
+
+      </div>
+    </main>
   );
 }
