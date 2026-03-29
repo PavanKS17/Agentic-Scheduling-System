@@ -4,7 +4,7 @@ import { z } from "zod";
 import crypto from "crypto";
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = new Resend(process.env.RESEND_API_KEY || "re_dummy_key_for_build");
 export const maxDuration = 30;
 
 const generateMockAvailabilities = () => {
