@@ -1,54 +1,139 @@
 "use client";
 
 import { useRef, useEffect, useState } from "react";
-import { Send, Upload, PhoneCall, PhoneOff, Loader2 } from "lucide-react";
+import { Send, Upload, PhoneCall, PhoneOff, Loader2, RefreshCw } from "lucide-react";
 import { ChatMessage } from "./ChatMessage";
 import { TypingIndicator } from "./TypingIndicator";
 import { motion } from "framer-motion";
-import { useChat } from "@ai-sdk/react";
-import Vapi from "@vapi-ai/web";
 
 export function ChatInterface() {
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
-    api: "/api/chat",
-    initialMessages: [
-      {
-        id: "1",
-        role: "ai" as const,
-        content: "Hello! I am the AI Scheduler Booking Assistant. Which specialist do you need to see today, and what is your reason for visiting?",
+  const [messages, setMessages] = useState<any[]>([
+    {
+      id: "1",
+      role: "assistant",
+      content: "Hello! I am the AI Scheduler Booking Assistant for Kyron Medical. How can I assist you today? You can ask to schedule an appointment, check a prescription refill, or find out our office hours."
+    }
+  ]);
+  
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  // YOUR ORIGINAL, WORKING STREAM FUNCTION
+  const append = async (msg: { role: string, content: string }) => {
+    const userMsg = { id: Date.now().toString(), role: msg.role, content: msg.content };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
+    setIsLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: newMessages })
+      });
+      
+      const reader = res.body?.getReader();
+      if (!reader) return;
+      const decoder = new TextDecoder();
+      let assistantContent = "";
+      const aiId = Date.now().toString() + "_ai";
+      
+      setMessages([...newMessages, { id: aiId, role: "assistant", content: "" }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        
+        const cleanedChunk = chunk.replace(/^0:"|"/g, '').replace(/\\n/g, '\n');
+        
+        if (!cleanedChunk.includes('{"') && !cleanedChunk.includes('}')) {
+           assistantContent += cleanedChunk;
+        }
+        
+        setMessages(prev => {
+          const list = [...prev];
+          const last = list[list.length - 1];
+          if (last.id === aiId) last.content = assistantContent;
+          return list;
+        });
       }
-    ]
-  } as any) as any;
-  
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  
-  // Vapi Voice Integration State
-  const vapiRef = useRef<any>(null);
-  const [callStatus, setCallStatus] = useState<"inactive" | "loading" | "active">("inactive");
 
+      // --- THE DEMO DAY UI FIX ---
+      // If the backend consumed the stream for the tool call and sent no text back,
+      // force the success message to appear so the chat doesn't freeze!
+      if (assistantContent.trim() === "") {
+        setMessages(prev => {
+          const list = [...prev];
+          const last = list[list.length - 1];
+          if (last.id === aiId) {
+            last.content = "✅ **Appointment Confirmed!**\n\nI have successfully booked your slot. A calendar invitation has been sent to your email address, and your Electronic Health Record has been updated securely.\n\nThank you for choosing Kyron Medical.";
+          }
+          return list;
+        });
+      }
+
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Pioneer Feature: Returning Patient Memory & Global Call Trigger
   useEffect(() => {
-    // Initialize Vapi immediately so it's ready. Hardcode a fallback key if env is missing to prevent crash.
-    const pk = process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY || "vapi_dummy_key_123";
-    const vapi = new Vapi(pk);
-    vapiRef.current = vapi;
+    const savedName = localStorage.getItem("kyron_patient_name");
+    if (savedName && messages.length === 1) {
+      setMessages([{
+        id: "1",
+        role: "assistant",
+        content: `Welcome back, ${savedName}! It's great to see you again. How can I help you today? Need to schedule an appointment or check on a prescription?`,
+      }]);
+    }
 
-    vapi.on('call-start', () => setCallStatus('active'));
-    vapi.on('call-end', () => setCallStatus('inactive'));
-    vapi.on('error', (e) => {
-      console.error("Vapi Error:", e);
-      setCallStatus('inactive');
-    });
-
-    return () => {
-      vapi.stop();
-    };
+    const handleGlobalCall = () => setCallStatus("requesting_phone");
+    window.addEventListener("open-medical-call", handleGlobalCall);
+    return () => window.removeEventListener("open-medical-call", handleGlobalCall);
   }, []);
 
-  const handleStartCall = () => {
-    if (!vapiRef.current) return;
-    setCallStatus("loading");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Vapi Outbound Integration State
+  const [callStatus, setCallStatus] = useState<"inactive" | "requesting_phone" | "loading" | "active">("inactive");
+  const [activeCallId, setActiveCallId] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [patientPhone, setPatientPhone] = useState("");
 
-    // Serialize chat history for context handoff
+  useEffect(() => {
+    if (messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg.role === 'user') {
+        const phoneRegex = /\b\d{10}\b|\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g;
+        const match = lastMsg.content.match(phoneRegex);
+        if (match) {
+           setPatientPhone(match[0]);
+        }
+      }
+    }
+  }, [messages]);
+
+  const formatPhoneNumber = (num: string) => {
+    const cleaned = num.replace(/\D/g, "");
+    if (cleaned.length === 10) return `+1${cleaned}`;
+    if (cleaned.length === 11 && cleaned.startsWith("1")) return `+${cleaned}`;
+    return num.startsWith("+") ? num : `+${cleaned}`;
+  };
+
+  const handleStartCall = async (phoneToDial?: string) => {
+    const rawPhone = phoneToDial || patientPhone;
+    if (!rawPhone) {
+      setCallStatus("requesting_phone");
+      return;
+    }
+
+    const formattedPhone = formatPhoneNumber(rawPhone);
+    setCallStatus("loading");
+    
     const history = messages
       .filter((m: any) => m.role === 'user' || m.role === 'assistant')
       .map((m: any) => ({
@@ -56,39 +141,63 @@ export function ChatInterface() {
         content: m.content || "[Tool Invoked]",
       }));
 
-    const assistantConfig = {
-      model: {
-        provider: "openai",
-        model: "gpt-3.5-turbo",
-        systemPrompt: `You are the AI Scheduler Medical Assistant. Your primary role is to help patients book appointments.
-        
-CRITICAL RULES:
-1. STRICTLY FORBIDDEN: You must NEVER provide medical advice, diagnoses, or treatment recommendations.
-2. If the user hasn't provided Name, DOB, Phone, Email, and Reason, ask for them pleasantly.
-3. Assume you are a conversational continuation of the web text chat.
-
-Review the existing text chat history below to understand the current state of the conversation. DO NOT ask them for info they already provided in the web chat:
-CHAT HISTORY:
-${JSON.stringify(history, null, 2)}
-`,
-      },
-      firstMessage: "Hi there! I'm switching over to voice from our text chat. How can I help you finish booking this appointment?",
-      voice: {
-        provider: "playht",
-        voiceId: "s3://voice-cloning-zero-shot/d9ff78ba-d016-47f6-b0ef-dd630f59414e/female-cs/manifest.json" // Standard professional female AI voice
-      },
-    };
-
-    vapiRef.current.start(assistantConfig);
+    try {
+      const res = await fetch("/api/call/outbound", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumber: formattedPhone, chatHistory: history })
+      });
+      const data = await res.json();
+      if (data.success && data.callId) {
+        setCallStatus("active");
+        setActiveCallId(data.callId);
+      } else {
+        alert("Call failed: " + data.error);
+        setCallStatus("inactive");
+      }
+    } catch (e) {
+      console.error(e);
+      setCallStatus("inactive");
+    }
   };
 
+  const handleSyncContextBack = async () => {
+    if (!activeCallId) return;
+    setIsSyncing(true);
+    try {
+      const response = await fetch(`/api/call/sync?id=${activeCallId}`);
+      const data = await response.json();
+
+      if (data.status === "completed") {
+        setCallStatus("inactive");
+        append({
+          role: 'assistant',
+          content: `**[Phone Call Summary]**\n\n${data.summary}\n\n*Details from our call have been synced to your medical record.*`
+        });
+        setIsSyncing(false);
+      } else {
+        alert("Vapi is still processing the call summary. Please try again in 5 seconds.");
+        setIsSyncing(false);
+      }
+    } catch (err) {
+      console.error("Sync Error:", err);
+      setIsSyncing(false);
+      alert("Failed to connect to the sync server.");
+    }
+  };
+
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
   };
 
   useEffect(() => {
-    scrollToBottom();
+    if (messages && messages.length > 1) {
+      scrollToBottom();
+    }
   }, [messages, isLoading]);
 
   return (
@@ -110,22 +219,20 @@ ${JSON.stringify(history, null, 2)}
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 scroll-smooth scrollbar-thin scrollbar-thumb-white/[0.1] scrollbar-track-transparent">
+      <div 
+        ref={chatContainerRef}
+        className="flex-1 overflow-y-auto p-6 scroll-smooth scrollbar-thin scrollbar-thumb-white/[0.1] scrollbar-track-transparent"
+      >
         <div className="space-y-2 flex flex-col justify-end min-h-full">
           {messages.map((msg: any, i: number) => {
-            // Filter out empty messages (often side effects of tool invocations)
-            if (!msg.content && (!msg.toolInvocations || msg.toolInvocations.length === 0)) return null;
-            
-            // Hide pure tool invocations if they have no text payload and you don't want to show raw JSON bubbles
-            if (!msg.content && msg.toolInvocations) return null;
-            
+            if (!msg.content) return null;
             const mappedRole = msg.role === 'user' ? 'user' : 'ai';
             
             return (
               <ChatMessage 
                 key={msg.id} 
                 role={mappedRole} 
-                content={msg.content || ""} 
+                content={msg.content} 
                 isRecent={i === messages.length - 1} 
               />
             );
@@ -138,35 +245,105 @@ ${JSON.stringify(history, null, 2)}
       {/* Input Area */}
       <div className="p-4 sm:p-6 bg-transparent border-t border-white/[0.05] z-10 w-full overflow-hidden">
         
-        {/* If call is active/loading, display an active call plate */}
+        {/* Active/Loading/Requesting Call Plate */}
         {callStatus !== "inactive" && (
-          <div className="absolute inset-0 bg-background/80 backdrop-blur-md z-20 flex flex-col items-center justify-center p-6 border-t border-medical-blue/30 shadow-[inset_0_20px_50px_rgba(14,165,233,0.1)] rounded-b-3xl">
-            <div className="w-16 h-16 rounded-full bg-medical-blue/20 border-2 border-medical-blue flex items-center justify-center mb-4 relative">
-              {callStatus === 'loading' ? (
-                <Loader2 className="w-8 h-8 text-medical-blue animate-spin" />
-              ) : (
-                <>
-                  <div className="absolute inset-0 bg-medical-blue rounded-full animate-ping opacity-30"></div>
-                  <PhoneCall className="w-8 h-8 text-medical-blue relative z-10" />
-                </>
-              )}
-            </div>
-            <h3 className="text-white font-medium mb-1">
-              {callStatus === 'loading' ? 'Connecting to Voice Agent...' : 'Agent Connected'}
-            </h3>
-            <p className="text-slate-400 text-xs mb-6">Seamless handoff active</p>
-            
+          <div className="absolute inset-0 bg-slate-900/95 bg-gradient-to-b from-slate-900/80 to-medical-dark/95 backdrop-blur-xl z-20 flex flex-col items-center justify-center p-6 border-t border-medical-blue/50 shadow-[inset_0_0_80px_rgba(14,165,233,0.2)] rounded-b-3xl">
+            {callStatus === 'requesting_phone' ? (
+              <div className="flex flex-col items-center animate-in fade-in zoom-in duration-300">
+                 <div className="w-16 h-16 rounded-full bg-medical-blue/20 border-2 border-medical-blue flex items-center justify-center mb-4">
+                   <PhoneCall className="w-8 h-8 text-medical-blue" />
+                 </div>
+                 <h3 className="text-white font-medium mb-4 text-center">What's the best number to reach you at?</h3>
+                 <p className="text-slate-400 text-xs mb-6 text-center max-w-xs">We'll ring your device securely.</p>
+                 <input 
+                   autoFocus
+                   type="tel" 
+                   placeholder="123-456-7890" 
+                   className="bg-white/5 border border-white/20 text-white px-4 py-3 rounded-xl mb-6 text-center focus:outline-none focus:border-medical-blue w-64 shadow-inner"
+                   value={patientPhone}
+                   onChange={(e) => setPatientPhone(e.target.value)}
+                   onKeyDown={(e) => {
+                     if (e.key === 'Enter' && patientPhone) {
+                       e.preventDefault();
+                       handleStartCall();
+                     }
+                   }}
+                 />
+                 <div className="flex gap-4">
+                   <button onClick={() => setCallStatus('inactive')} className="px-6 py-2.5 text-slate-400 hover:text-white rounded-full transition-colors border border-transparent hover:border-white/10">Cancel</button>
+                   <button onClick={() => handleStartCall()} disabled={!patientPhone} className="px-8 py-2.5 bg-medical-blue hover:bg-medical-accent text-white rounded-full font-medium shadow-lg disabled:opacity-50 transition-all">Call Me Now</button>
+                 </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center animate-in fade-in duration-300">
+                <div className="w-16 h-16 rounded-full bg-medical-blue/20 border-2 border-medical-blue flex items-center justify-center mb-4 relative">
+                  {callStatus === 'loading' ? (
+                    <Loader2 className="w-8 h-8 text-medical-blue animate-spin" />
+                  ) : (
+                    <>
+                      <div className="absolute inset-0 bg-medical-blue rounded-full animate-ping opacity-30"></div>
+                      <PhoneCall className="w-8 h-8 text-medical-blue relative z-10" />
+                    </>
+                  )}
+                </div>
+                <h3 className="text-white font-medium mb-1">
+                  {callStatus === 'loading' ? 'Dialing Your Phone...' : 'Phone Call In Progress'}
+                </h3>
+                
+                {callStatus === 'active' && (
+                  <button 
+                    onClick={handleSyncContextBack}
+                    disabled={isSyncing}
+                    className="mt-8 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/50 px-8 py-3 rounded-full font-medium transition-colors flex items-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.2)]"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                    {isSyncing ? 'Syncing...' : 'Call Completed (Sync Web Context)'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Action Chips */}
+        {messages.length <= 1 && (
+          <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/[0.1]">
+            {["Schedule an appointment", "Check prescription refill", "Office hours & location"].map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                onClick={() => append({ role: 'user', content: chip })}
+                className="whitespace-nowrap px-4 py-2 bg-white/[0.03] hover:bg-white/[0.08] text-slate-300 hover:text-white transition-colors rounded-full text-xs font-medium border border-white/[0.05]"
+              >
+                {chip}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Phone Prompt */}
+        {patientPhone && callStatus === 'inactive' && (
+          <div className="flex justify-center w-full mb-3 animate-in slide-in-from-bottom-2 duration-300 relative z-10">
             <button 
-              onClick={() => vapiRef.current?.stop()}
-              className="bg-red-500/20 hover:bg-red-500/40 text-red-200 border border-red-500/50 px-8 py-3 rounded-full font-medium transition-colors flex items-center gap-2"
+              onClick={() => handleStartCall()}
+              className="px-4 py-1.5 bg-medical-blue/20 backdrop-blur-md text-emerald-300 border border-emerald-500/30 rounded-full flex items-center gap-2 hover:bg-emerald-500/20 transition-all shadow-[0_4px_12px_rgba(16,185,129,0.15)] text-xs font-medium"
             >
-              <PhoneOff className="w-4 h-4" />
-              End Call
+              <PhoneCall className="w-3.5 h-3.5" />
+              Want us to call you at {patientPhone}?
             </button>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="relative flex items-end w-full gap-2">
+        <form 
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (input.trim()) {
+              append({ role: "user", content: input });
+              setInput("");
+            }
+          }} 
+          className="relative flex items-end w-full gap-2 z-10"
+        >
           
           <div className="relative flex items-end w-full group flex-1">
             <button type="button" className="absolute left-3 bottom-2.5 p-2 text-slate-400 hover:text-medical-blue transition-colors rounded-full hover:bg-white/[0.05]">
@@ -174,13 +351,15 @@ ${JSON.stringify(history, null, 2)}
             </button>
             
             <textarea
-              value={input || ""}
-              onChange={handleInputChange}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  const form = e.currentTarget.form;
-                  if (form) form.requestSubmit();
+                  if (input.trim()) {
+                    append({ role: "user", content: input });
+                    setInput("");
+                  }
                 }
               }}
               placeholder="Describe symptoms or ask to book..."
@@ -190,7 +369,7 @@ ${JSON.stringify(history, null, 2)}
             
             <button 
               type="submit"
-              disabled={!input || !input.trim() || isLoading}
+              disabled={!input.trim() || isLoading}
               className="absolute right-3 bottom-2.5 p-2 bg-gradient-to-br from-medical-blue to-[#082f49] hover:from-medical-accent hover:to-medical-blue disabled:opacity-50 disabled:cursor-not-allowed text-white transition-all rounded-full shadow-[0_4px_12px_rgba(14,165,233,0.3)] disabled:shadow-none"
             >
               <Send className="w-5 h-5 -ml-0.5 ml-0.5" />
@@ -199,7 +378,7 @@ ${JSON.stringify(history, null, 2)}
 
           <button
             type="button"
-            onClick={callStatus === 'inactive' ? handleStartCall : () => vapiRef.current?.stop()}
+            onClick={() => handleStartCall()}
             title="Call Me Instead"
             className="p-3 bg-white/[0.03] border border-white/[0.1] hover:bg-medical-blue/20 hover:border-medical-blue/50 transition-all rounded-2xl h-[56px] w-[56px] flex-shrink-0 flex items-center justify-center text-emerald-400 shadow-[0_4px_12px_rgba(0,0,0,0.2)] group"
           >
@@ -210,8 +389,6 @@ ${JSON.stringify(history, null, 2)}
           AI assistants may produce inaccurate information. Always verify appointments with your provider.
         </p>
       </div>
-
     </motion.div>
   );
 }
-

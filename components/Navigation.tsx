@@ -1,13 +1,51 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Moon, Stethoscope } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 export function Navigation() {
+  const [isVisible, setIsVisible] = useState(true);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    let lastScrollY = window.scrollY;
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      setIsScrolled(currentScrollY > 50);
+      // Hide if scrolling down past 100px. Show otherwise.
+      if (currentScrollY > lastScrollY && currentScrollY > 100) {
+        setIsVisible(false);
+      } else {
+        setIsVisible(true);
+      }
+      lastScrollY = currentScrollY;
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (e.clientY < 80) setIsVisible(true);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("mousemove", handleMouseMove);
+    };
+  }, []);
+
   return (
-    <nav className="w-full flex items-center justify-between px-8 py-6 relative z-10 border-b border-white/[0.05] glassmorphism">
-      <div className="flex items-center gap-12">
+    <>
+      {/* Spacer to prevent layout shift since nav is fixed */}
+      <div className="h-[89px] w-full flex-shrink-0" />
+      
+      <nav className={cn(
+        "fixed top-0 left-0 w-full flex items-center justify-between px-8 py-6 z-50 transition-all duration-300",
+        isScrolled ? "bg-[#020617]/80 backdrop-blur-xl border-b border-white/[0.08] shadow-2xl" : "bg-transparent border-b border-white/[0.05]",
+        isVisible ? "translate-y-0" : "-translate-y-full"
+      )}>
+        <div className="flex items-center gap-12">
         <Link href="/" className="flex items-center gap-2 group">
           <div className="bg-gradient-to-br from-medical-blue to-medical-dark p-2 rounded-lg group-hover:shadow-[0_0_15px_rgba(14,165,233,0.5)] transition-all duration-300">
             <Stethoscope className="w-6 h-6 text-white" />
@@ -17,10 +55,18 @@ export function Navigation() {
           </span>
         </Link>
         <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-400">
-          <Link href="#" className="text-white transition-colors">Home</Link>
-          <Link href="#" className="hover:text-white transition-colors">About</Link>
-          <Link href="#" className="hover:text-white transition-colors">How it works</Link>
-          <Link href="#" className="hover:text-white transition-colors">Resources</Link>
+          <Link href="#home" className="text-white hover:text-white transition-colors relative group">
+            Home
+            <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-medical-blue transition-all group-hover:w-full rounded-full"></span>
+          </Link>
+          <Link href="#features" className="hover:text-white transition-colors relative group">
+            Features
+            <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-medical-blue transition-all group-hover:w-full rounded-full"></span>
+          </Link>
+          <Link href="#how-it-works" className="hover:text-white transition-colors relative group">
+            How it works
+            <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-medical-blue transition-all group-hover:w-full rounded-full"></span>
+          </Link>
         </div>
       </div>
       
@@ -37,5 +83,6 @@ export function Navigation() {
         </button>
       </div>
     </nav>
+    </>
   );
 }
