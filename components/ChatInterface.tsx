@@ -11,7 +11,7 @@ export function ChatInterface() {
     {
       id: "1",
       role: "assistant",
-      content: "Hello! I am the AI Scheduler Booking Assistant for Kyron Medical. How can I assist you today? You can ask to schedule an appointment, check a prescription refill, or find out our office hours."
+      content: "Hello! I am the AI Scheduler Booking agent. How can I assist you today? You can ask to schedule an appointment, check a prescription refill, or find out our office hours."
     }
   ]);
   
